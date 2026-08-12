@@ -4,15 +4,15 @@
   "description": "Open Source HR & Payroll System powered by the Frappe Framework",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/frappe/hrms.git"
+    "url": "git+https://github.com/eunginx/pydllm_billing.git"
   },
-  "homepage": "https://frappe.io/hr",
-  "author": "Frappe Technologies Pvt. Ltd.",
+  "homepage": "https://ledger.pn.sorsiri.in",
+  "author": "PYDLLM Billing",
   "license": "GPL-3.0",
   "bugs": {
-    "url": "https://github.com/frappe/hrms/issues"
+    "url": "https://github.com/eunginx/pydllm_billing/issues"
   },
-  "aworkspaces": ["frontend", "roster", "frappe-ui"],
+  "workspaces": ["frontend", "roster", "frappe-ui"],
   "scripts": {
     "postinstall": "yarn install-pwa-deps && yarn install-roster-deps",
     "install-pwa-deps": "cd frontend && yarn install --check-files",

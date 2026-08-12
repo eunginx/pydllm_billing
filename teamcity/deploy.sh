@@ -25,25 +25,29 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-change-me-to-a-strong-password}"
 
 build_frontend() {
 	local deploy_path="$1"
+	local install_cmd
+	local build_cmd
 
 	if command -v yarn >/dev/null 2>&1; then
-		echo "=== Building frontend assets with local yarn ==="
-		cd "${deploy_path}"
-		yarn install
-		yarn build
+		install_cmd="yarn install"
+		build_cmd="yarn build"
 	elif command -v npm >/dev/null 2>&1; then
-		echo "=== Building frontend assets with local npm ==="
-		cd "${deploy_path}"
-		npm install
-		npm run build
+		install_cmd="npm install"
+		build_cmd="npm run build"
 	else
 		echo "=== Building frontend assets inside Node.js Docker container ==="
 		docker run --rm \
 			-v "${deploy_path}:${deploy_path}" \
 			-w "${deploy_path}" \
 			node:20-slim \
-			bash -c "corepack enable && yarn install --frozen-lockfile && yarn build"
+			bash -c "corepack enable && cd '${deploy_path}' && yarn install && yarn build"
+		return
 	fi
+
+	echo "=== Building frontend assets with local Node tooling ==="
+	cd "${deploy_path}"
+	${install_cmd}
+	${build_cmd}
 }
 
 deploy_locally() {
@@ -103,7 +107,7 @@ deploy_remotely() {
 					-v "\${deploy_path}:\${deploy_path}" \\
 					-w "\${deploy_path}" \\
 					node:20-slim \\
-					bash -c "corepack enable && yarn install --frozen-lockfile && yarn build"
+					bash -c "corepack enable && cd '\${deploy_path}' && yarn install && yarn build"
 			fi
 		}
 
