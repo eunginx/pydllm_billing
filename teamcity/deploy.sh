@@ -29,29 +29,18 @@ CHECKOUT_DIR="$(pwd)"
 
 build_frontend() {
 	local build_dir="$1"
-	local install_cmd
-	local build_cmd
 
-	if command -v yarn >/dev/null 2>&1; then
-		install_cmd="yarn install"
-		build_cmd="yarn build"
-	elif command -v npm >/dev/null 2>&1; then
-		install_cmd="npm install"
-		build_cmd="npm run build"
-	else
-		echo "=== Building frontend assets inside Node.js Docker container ==="
-		docker run --rm \
-			-v "${build_dir}:${build_dir}" \
-			-w "${build_dir}" \
-			node:20-slim \
-			bash -c "npm install && npm run build"
-		return
+	if ! command -v npm >/dev/null 2>&1; then
+		echo "ERROR: npm is not installed on the TeamCity agent."
+		echo "Install Node.js 20 LTS on the agent, or install npm in the agent environment."
+		echo "For Debian/Ubuntu: curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs"
+		exit 1
 	fi
 
-	echo "=== Building frontend assets with local Node tooling ==="
+	echo "=== Building frontend assets with local npm ==="
 	cd "${build_dir}"
-	${install_cmd}
-	${build_cmd}
+	npm install
+	npm run build
 }
 
 sync_to_deploy_path() {
@@ -111,24 +100,15 @@ deploy_remotely() {
 
 		build_frontend() {
 			local build_dir="\$1"
-			if command -v yarn >/dev/null 2>&1; then
-				echo "=== Building frontend assets with local yarn ==="
-				cd "\${build_dir}"
-				yarn install
-				yarn build
-			elif command -v npm >/dev/null 2>&1; then
-				echo "=== Building frontend assets with local npm ==="
-				cd "\${build_dir}"
-				npm install
-				npm run build
-			else
-				echo "=== Building frontend assets inside Node.js Docker container ==="
-				docker run --rm \\
-					-v "\${build_dir}:\${build_dir}" \\
-					-w "\${build_dir}" \\
-					node:20-slim \\
-					bash -c "npm install && npm run build"
+			if ! command -v npm >/dev/null 2>&1; then
+				echo "ERROR: npm is not installed on the remote host."
+				echo "Install Node.js 20 LTS, or install npm in the remote environment."
+				exit 1
 			fi
+			echo "=== Building frontend assets with local npm ==="
+			cd "\${build_dir}"
+			npm install
+			npm run build
 		}
 
 		# Build in TeamCity checkout dir on remote host
