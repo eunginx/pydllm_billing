@@ -14,14 +14,14 @@
   },
   "workspaces": ["frontend", "roster", "frappe-ui"],
   "scripts": {
-    "postinstall": "yarn install-pwa-deps && yarn install-roster-deps",
-    "install-pwa-deps": "cd frontend && yarn install --check-files",
-    "install-roster-deps": "cd roster && yarn install --check-files",
-    "dev-pwa": "cd frontend && yarn dev",
-    "dev-roster": "cd roster && yarn dev",
-    "build": "yarn build-pwa && yarn build-roster",
-    "build-pwa": "cd frontend && yarn build",
-    "build-roster": "cd roster && yarn build"
+    "postinstall": "npm run install-pwa-deps && npm run install-roster-deps",
+    "install-pwa-deps": "cd frontend && npm install --check-files",
+    "install-roster-deps": "cd roster && npm install --check-files",
+    "dev-pwa": "cd frontend && npm run dev",
+    "dev-roster": "cd roster && npm run dev",
+    "build": "npm run build-pwa && npm run build-roster",
+    "build-pwa": "cd frontend && npm run build",
+    "build-roster": "cd roster && npm run build"
   },
   "dependencies": {
     "html2canvas": "^1.4.1"
