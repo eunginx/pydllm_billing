@@ -1,14 +1,13 @@
 <div align="center">
-	<a href="https://frappe.io/hr">
-		<img src=".github/frappe-hr-logo.png" height="80px" width="80px" alt="Frappe HR Logo">
+	<a href="https://ledger.pn.sorsiri.in">
+		<img src=".github/pydllm-billing-logo.png" height="80px" width="80px" alt="PYDLLM Billing Logo">
 	</a>
-	<h2>Frappe HR</h2>
+	<h2>PYDLLM Billing</h2>
 	<p align="center">
 		<p>Open Source, modern, and easy-to-use HR and Payroll Software</p>
 	</p>
 
-[![CI](https://github.com/frappe/hrms/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/frappe/hrms/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/frappe/hrms/branch/develop/graph/badge.svg?token=0TwvyUg3I5)](https://codecov.io/gh/frappe/hrms)
+[![CI](https://github.com/eunginx/pydllm_billing/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/eunginx/pydllm_billing/actions/workflows/ci.yml)
 
 <a href="https://trendshift.io/repositories/10972" target="_blank"><img src="https://trendshift.io/api/badge/repositories/10972" alt="frappe%2Fhrms | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
@@ -23,13 +22,29 @@
 	<a href="https://docs.frappe.io/hr/introduction">Documentation</a>
 </div>
 
-## Frappe HR
+## PYDLLM Billing
 
-Frappe HR has everything you need to drive excellence within the company. It's a complete HRMS solution with over 13 different modules right from Employee Management, Onboarding, Leaves, to Payroll, Taxation, and more!
+This repository hosts the production deployment of Frappe HR for **ledger.pn.sorsiri.in**, built from the upstream Frappe HR source.
+
+## Production Deployment
+
+The production stack is orchestrated with Docker Compose and served behind nginx. Deployment is triggered automatically on pushes to the `main` branch via GitHub Actions.
+
+```sh
+git clone https://github.com/eunginx/pydllm_billing.git
+cd pydllm_billing
+cp .env.example .env
+# edit .env and set strong passwords + SSL certificates in docker/nginx/ssl/
+docker compose -f docker/docker-compose.prod.yml up -d --build
+```
+
+Required before first deploy:
+- Place TLS certificate at `docker/nginx/ssl/fullchain.pem`
+- Place TLS key at `docker/nginx/ssl/privkey.pem`
+- DNS `ledger.pn.sorsiri.in` pointing to the host running Docker.
 
 ## Motivation
-When Frappe team started growing in terms of size, we needed an open-source HR and Payroll software. We didn't find any "true" open-source HR software out there and so decided to build one ourselves.
-Initially, it was a set of modules within ERPNext but version 14 onwards, as the modules became more mature, Frappe HR was created as a separate product.
+This project started from the upstream Frappe HR product and is configured for the PYDLLM Billing organisation.
 
 ## Key Features
 
@@ -58,32 +73,27 @@ Initially, it was a set of modules within ERPNext but version 14 onwards, as the
 
 ## Production Setup
 
-### Managed Hosting
+### Reverse Proxy
 
-You can try [Frappe Cloud](https://frappecloud.com), a simple, user-friendly and sophisticated [open-source](https://github.com/frappe/press) platform to host Frappe applications with peace of mind.
+Nginx is included in the production compose. It terminates TLS and proxies to the Frappe backend on port `8000` and the Socket.IO server on port `9000`. See [docker/nginx/nginx.conf](docker/nginx/nginx.conf).
 
-It takes care of installation, setup, upgrades, monitoring, maintenance and support of your Frappe deployments. It is a fully featured developer platform with an ability to manage and control multiple Frappe deployments.
-
-<div>
-	<a href="https://frappecloud.com/hrms/signup" target="_blank">
-		<picture>
-			<source media="(prefers-color-scheme: dark)" srcset="https://frappe.io/files/try-on-fc-white.png">
-			<img src="https://frappe.io/files/try-on-fc-black.png" alt="Try on Frappe Cloud" height="28" />
-		</picture>
-	</a>
-</div>
+| Setting | Value |
+|---|---|
+| Public domain | `ledger.pn.sorsiri.in` |
+| Upstream host | `backend:8000` / `backend:9000` |
+| Public ports | `80` and `443` |
 
 
 ## Development setup
 ### Docker
-You need Docker, docker-compose and git setup on your machine. Refer [Docker documentation](https://docs.docker.com/). After that, run the following commands:
+For local development, use the original development compose:
 ```
-git clone https://github.com/frappe/hrms
-cd hrms/docker
+git clone https://github.com/eunginx/pydllm_billing.git
+cd pydllm_billing/docker
 docker-compose up
 ```
 
-Wait for some time until the setup script creates a site. After that you can access `http://localhost:8000` in your browser and the login screen for HR should show up.
+Wait for some time until the setup script creates the site. After that you can access `http://ledger.pn.sorsiri.in:8000` in your browser and the login screen for HR should show up.
 
 Use the following credentials to log in:
 
@@ -98,13 +108,13 @@ Use the following credentials to log in:
 	```
 2. In a separate terminal window, run the following commands
 	```sh
-	$ bench new-site hrms.localhost
+	$ bench new-site ledger.pn.sorsiri.in
 	$ bench get-app erpnext
 	$ bench get-app hrms
-	$ bench --site hrms.localhost install-app hrms
-	$ bench --site hrms.localhost add-to-hosts
+	$ bench --site ledger.pn.sorsiri.in install-app hrms
+	$ bench --site ledger.pn.sorsiri.in add-to-hosts
 	```
-3. You can access the site at `http://hrms.localhost:8080`
+3. You can access the site at `http://ledger.pn.sorsiri.in:8080`
 
 ## Learning and Community
 
