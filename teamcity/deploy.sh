@@ -40,7 +40,7 @@ build_frontend() {
 			-v "${deploy_path}:${deploy_path}" \
 			-w "${deploy_path}" \
 			node:20-slim \
-			bash -c "corepack enable && cd '${deploy_path}' && yarn install && yarn build"
+			bash -c "npm install && npm run build"
 		return
 	fi
 
@@ -110,7 +110,7 @@ deploy_remotely() {
 					-v "\${deploy_path}:\${deploy_path}" \\
 					-w "\${deploy_path}" \\
 					node:20-slim \\
-					bash -c "corepack enable && cd '\${deploy_path}' && yarn install && yarn build"
+					bash -c "npm install && npm run build"
 			fi
 		}
 
