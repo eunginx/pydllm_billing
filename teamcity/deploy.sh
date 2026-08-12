@@ -23,8 +23,12 @@ DEPLOY_PATH="${DEPLOY_PATH:-/opt/pydllm_billing}"
 MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-change-me-to-a-strong-password}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-change-me-to-a-strong-password}"
 
+# TeamCity checks out the repo into the current working directory.
+# We build frontend assets here to avoid Docker volume mount issues with /opt.
+CHECKOUT_DIR="$(pwd)"
+
 build_frontend() {
-	local deploy_path="$1"
+	local build_dir="$1"
 	local install_cmd
 	local build_cmd
 
@@ -37,37 +41,48 @@ build_frontend() {
 	else
 		echo "=== Building frontend assets inside Node.js Docker container ==="
 		docker run --rm \
-			-v "${deploy_path}:${deploy_path}" \
-			-w "${deploy_path}" \
+			-v "${build_dir}:${build_dir}" \
+			-w "${build_dir}" \
 			node:20-slim \
 			bash -c "npm install && npm run build"
 		return
 	fi
 
 	echo "=== Building frontend assets with local Node tooling ==="
-	cd "${deploy_path}"
+	cd "${build_dir}"
 	${install_cmd}
 	${build_cmd}
+}
+
+sync_to_deploy_path() {
+	local source_dir="$1"
+	local target_dir="$2"
+
+	echo "=== Syncing built assets from ${source_dir} to ${target_dir} ==="
+
+	if [ "${source_dir%/}" = "${target_dir%/}" ]; then
+		echo "Source and target are the same; skipping sync."
+		return
+	fi
+
+	mkdir -p "${target_dir}"
+	rsync -a --delete \
+		--exclude='.git' \
+		--exclude='node_modules' \
+		"${source_dir%/}/" "${target_dir%/}/"
 }
 
 deploy_locally() {
 	local deploy_path="$1"
 
-	echo "=== Local deploy to ${deploy_path} ==="
+	echo "=== Local deploy: checkout=${CHECKOUT_DIR}, deploy_path=${deploy_path} ==="
 
-	if [ -d "${deploy_path}/.git" ]; then
-		cd "${deploy_path}"
-		git fetch origin
-		git reset --hard "origin/${BRANCH}"
-	else
-		mkdir -p "${deploy_path}"
-		git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${deploy_path}"
-	fi
+	# Build frontend assets in the TeamCity checkout directory.
+	# The checkout is guaranteed to contain the repo files.
+	build_frontend "${CHECKOUT_DIR}"
 
-	echo "=== DEBUG: deploy_path=${deploy_path}, pwd=$(pwd), ls=${deploy_path} ==="
-	ls -la "${deploy_path}"
-
-	build_frontend "${deploy_path}"
+	# Sync the built repo (excluding .git and node_modules) to the runtime path.
+	sync_to_deploy_path "${CHECKOUT_DIR}" "${deploy_path}"
 
 	cd "${deploy_path}"
 
@@ -92,37 +107,39 @@ deploy_remotely() {
 	ssh "${deploy_host}" <<EOF
 		set -euo pipefail
 
+		CHECKOUT_DIR="$(pwd)"
+
 		build_frontend() {
-			local deploy_path="\$1"
+			local build_dir="\$1"
 			if command -v yarn >/dev/null 2>&1; then
 				echo "=== Building frontend assets with local yarn ==="
-				cd "\${deploy_path}"
+				cd "\${build_dir}"
 				yarn install
 				yarn build
 			elif command -v npm >/dev/null 2>&1; then
 				echo "=== Building frontend assets with local npm ==="
-				cd "\${deploy_path}"
+				cd "\${build_dir}"
 				npm install
 				npm run build
 			else
 				echo "=== Building frontend assets inside Node.js Docker container ==="
 				docker run --rm \\
-					-v "\${deploy_path}:\${deploy_path}" \\
-					-w "\${deploy_path}" \\
+					-v "\${build_dir}:\${build_dir}" \\
+					-w "\${build_dir}" \\
 					node:20-slim \\
 					bash -c "npm install && npm run build"
 			fi
 		}
 
-		if [ -d "${deploy_path}/.git" ]; then
-			cd "${deploy_path}"
-			git fetch origin
-			git reset --hard "origin/${BRANCH}"
-		else
-			git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${deploy_path}"
-		fi
+		# Build in TeamCity checkout dir on remote host
+		build_frontend "\${CHECKOUT_DIR}"
 
-		build_frontend "${deploy_path}"
+		# Sync built checkout to deploy path
+		mkdir -p "${deploy_path}"
+		rsync -a --delete \
+			--exclude='.git' \
+			--exclude='node_modules' \
+			"\${CHECKOUT_DIR%/}/" "${deploy_path%/}/"
 
 		cd "${deploy_path}"
 
