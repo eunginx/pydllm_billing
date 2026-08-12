@@ -64,6 +64,9 @@ deploy_locally() {
 		git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${deploy_path}"
 	fi
 
+	echo "=== DEBUG: deploy_path=${deploy_path}, pwd=$(pwd), ls=${deploy_path} ==="
+	ls -la "${deploy_path}"
+
 	build_frontend "${deploy_path}"
 
 	cd "${deploy_path}"
