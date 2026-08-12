@@ -23,6 +23,29 @@ DEPLOY_PATH="${DEPLOY_PATH:-/opt/pydllm_billing}"
 MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-change-me-to-a-strong-password}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-change-me-to-a-strong-password}"
 
+build_frontend() {
+	local deploy_path="$1"
+
+	if command -v yarn >/dev/null 2>&1; then
+		echo "=== Building frontend assets with local yarn ==="
+		cd "${deploy_path}"
+		yarn install
+		yarn build
+	elif command -v npm >/dev/null 2>&1; then
+		echo "=== Building frontend assets with local npm ==="
+		cd "${deploy_path}"
+		npm install
+		npm run build
+	else
+		echo "=== Building frontend assets inside Node.js Docker container ==="
+		docker run --rm \
+			-v "${deploy_path}:${deploy_path}" \
+			-w "${deploy_path}" \
+			node:20-slim \
+			bash -c "corepack enable && yarn install --frozen-lockfile && yarn build"
+	fi
+}
+
 deploy_locally() {
 	local deploy_path="$1"
 
@@ -35,11 +58,11 @@ deploy_locally() {
 	else
 		mkdir -p "${deploy_path}"
 		git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${deploy_path}"
-		cd "${deploy_path}"
 	fi
 
-	yarn install
-	yarn build
+	build_frontend "${deploy_path}"
+
+	cd "${deploy_path}"
 
 	if [ ! -f .env ]; then
 		cp .env.example .env
@@ -62,17 +85,39 @@ deploy_remotely() {
 	ssh "${deploy_host}" <<EOF
 		set -euo pipefail
 
+		build_frontend() {
+			local deploy_path="\$1"
+			if command -v yarn >/dev/null 2>&1; then
+				echo "=== Building frontend assets with local yarn ==="
+				cd "\${deploy_path}"
+				yarn install
+				yarn build
+			elif command -v npm >/dev/null 2>&1; then
+				echo "=== Building frontend assets with local npm ==="
+				cd "\${deploy_path}"
+				npm install
+				npm run build
+			else
+				echo "=== Building frontend assets inside Node.js Docker container ==="
+				docker run --rm \\
+					-v "\${deploy_path}:\${deploy_path}" \\
+					-w "\${deploy_path}" \\
+					node:20-slim \\
+					bash -c "corepack enable && yarn install --frozen-lockfile && yarn build"
+			fi
+		}
+
 		if [ -d "${deploy_path}/.git" ]; then
 			cd "${deploy_path}"
 			git fetch origin
 			git reset --hard "origin/${BRANCH}"
 		else
 			git clone --branch "${BRANCH}" --single-branch "${REPO_URL}" "${deploy_path}"
-			cd "${deploy_path}"
 		fi
 
-		yarn install
-		yarn build
+		build_frontend "${deploy_path}"
+
+		cd "${deploy_path}"
 
 		if [ ! -f .env ]; then
 			cp .env.example .env
