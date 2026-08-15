@@ -14,9 +14,6 @@
   },
   "workspaces": ["frontend", "roster", "frappe-ui"],
   "scripts": {
-    "postinstall": "npm run install-pwa-deps && npm run install-roster-deps",
-    "install-pwa-deps": "cd frontend && npm install --check-files",
-    "install-roster-deps": "cd roster && npm install --check-files",
     "dev-pwa": "cd frontend && npm run dev",
     "dev-roster": "cd roster && npm run dev",
     "build": "npm run build-pwa && npm run build-roster",
