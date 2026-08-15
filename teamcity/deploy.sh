@@ -24,6 +24,7 @@ MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-change-me-to-a-strong-password}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-change-me-to-a-strong-password}"
 
 # TeamCity checks out the repo into the current working directory.
+
 # We build frontend assets here to avoid Docker volume mount issues with /opt.
 CHECKOUT_DIR="$(pwd)"
 
@@ -84,7 +85,6 @@ ensure_nginx_mount_paths() {
 	local deploy_path="$1"
 	local nginx_dir="${deploy_path}/docker/nginx"
 	local conf_path="${nginx_dir}/nginx.conf"
-	local ssl_dir="${nginx_dir}/ssl"
 
 	# nginx.conf is now baked into the Docker image, so a stale directory on
 	# the host does not break the container. Remove it to keep the deploy path
@@ -93,31 +93,6 @@ ensure_nginx_mount_paths() {
 		echo "WARNING: ${conf_path} is a directory from a previous failed deploy; removing it."
 		rm -rf "${conf_path}"
 	fi
-
-	if [ -f "${ssl_dir}" ]; then
-		echo "WARNING: ${ssl_dir} is a file; removing it so it can be a directory."
-		rm -f "${ssl_dir}"
-	fi
-
-	mkdir -p "${ssl_dir}"
-}
-
-check_nginx_ssl_mount() {
-	local deploy_path="$1"
-	local nginx_dir="${deploy_path}/docker/nginx"
-	local ssl_dir="${nginx_dir}/ssl"
-
-	# nginx.conf is now baked into the image, so we only verify that the
-	# SSL bind-mount source is a directory. A stale file here would break the
-	# directory mount inside the container.
-	if [ -f "${ssl_dir}" ]; then
-		echo "ERROR: ${ssl_dir} is a file but must be a directory for the SSL mount."
-		ls -lah "${nginx_dir}/" || true
-		exit 1
-	fi
-
-	mkdir -p "${ssl_dir}"
-	echo "OK: ${ssl_dir} is ready for SSL certificates."
 }
 
 deploy_locally() {
@@ -131,9 +106,6 @@ deploy_locally() {
 
 	# Sync the built repo (excluding .git and node_modules) to the runtime path.
 	sync_to_deploy_path "${CHECKOUT_DIR}" "${deploy_path}"
-
-	# Ensure the only remaining nginx host mount (ssl directory) is valid.
-	check_nginx_ssl_mount "${deploy_path}"
 
 	cd "${deploy_path}"
 
@@ -179,17 +151,12 @@ deploy_remotely() {
 		# Sync built checkout to deploy path
 		mkdir -p "${deploy_path}"
 
-		# Ensure Docker bind-mount source types match container targets.
-		# A previous failed deploy may have left nginx.conf as a directory.
+		# Clean up stale nginx.conf directory from earlier failed deploys.
+		# It is no longer bind-mounted (nginx.conf is baked into the image).
 		if [ -d "${deploy_path}/docker/nginx/nginx.conf" ]; then
-			echo "WARNING: ${deploy_path}/docker/nginx/nginx.conf is a directory from a previous failed deploy; removing it."
+			echo "WARNING: ${deploy_path}/docker/nginx/nginx.conf is a stale directory; removing it."
 			rm -rf "${deploy_path}/docker/nginx/nginx.conf"
 		fi
-		if [ -f "${deploy_path}/docker/nginx/ssl" ]; then
-			echo "WARNING: ${deploy_path}/docker/nginx/ssl is a file; removing it."
-			rm -f "${deploy_path}/docker/nginx/ssl"
-		fi
-		mkdir -p "${deploy_path}/docker/nginx/ssl"
 
 		if command -v rsync >/dev/null 2>&1; then
 			rsync -a --delete \
@@ -203,23 +170,6 @@ deploy_remotely() {
 				--exclude='.git' \
 				--exclude='node_modules' \
 				. | tar -xf - -C "${deploy_path}"
-		fi
-
-		# Verify the SSL bind-mount source is a directory. nginx.conf is now
-		# baked into the image, so a stale directory there will not break the
-		# container, but we remove it to keep the deploy path clean.
-		if [ -d "${deploy_path}/docker/nginx/nginx.conf" ]; then
-			rm -rf "${deploy_path}/docker/nginx/nginx.conf"
-		fi
-		if [ -f "${deploy_path}/docker/nginx/ssl" ]; then
-			rm -f "${deploy_path}/docker/nginx/ssl"
-		fi
-		mkdir -p "${deploy_path}/docker/nginx/ssl"
-
-		if [ -f "${deploy_path}/docker/nginx/ssl" ]; then
-			echo "ERROR: ${deploy_path}/docker/nginx/ssl is a file but must be a directory for the SSL mount."
-			ls -lah "${deploy_path}/docker/nginx/" || true
-			exit 1
 		fi
 
 		cd "${deploy_path}"

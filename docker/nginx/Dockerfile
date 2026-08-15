@@ -5,8 +5,4 @@ FROM nginx:alpine
 # directory on the host.
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Ensure the SSL directory exists. Real certificates should be mounted
-# from the host at runtime via the ./nginx/ssl:/etc/nginx/ssl:ro bind.
-RUN mkdir -p /etc/nginx/ssl
-
-EXPOSE 80 443
+EXPOSE 80
