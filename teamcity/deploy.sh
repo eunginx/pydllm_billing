@@ -55,10 +55,20 @@ sync_to_deploy_path() {
 	fi
 
 	mkdir -p "${target_dir}"
-	rsync -a --delete \
-		--exclude='.git' \
-		--exclude='node_modules' \
-		"${source_dir%/}/" "${target_dir%/}/"
+
+	if command -v rsync >/dev/null 2>&1; then
+		rsync -a --delete \
+			--exclude='.git' \
+			--exclude='node_modules' \
+			"${source_dir%/}/" "${target_dir%/}/"
+	else
+		echo "rsync not found; using tar pipeline instead."
+		cd "${source_dir}"
+		tar -cf - \
+			--exclude='.git' \
+			--exclude='node_modules' \
+			. | tar -xf - -C "${target_dir}"
+	fi
 }
 
 deploy_locally() {
@@ -116,10 +126,19 @@ deploy_remotely() {
 
 		# Sync built checkout to deploy path
 		mkdir -p "${deploy_path}"
-		rsync -a --delete \
-			--exclude='.git' \
-			--exclude='node_modules' \
-			"\${CHECKOUT_DIR%/}/" "${deploy_path%/}/"
+		if command -v rsync >/dev/null 2>&1; then
+			rsync -a --delete \
+				--exclude='.git' \
+				--exclude='node_modules' \
+				"\${CHECKOUT_DIR%/}/" "${deploy_path%/}/"
+		else
+			echo "rsync not found; using tar pipeline instead."
+			cd "\${CHECKOUT_DIR}"
+			tar -cf - \
+				--exclude='.git' \
+				--exclude='node_modules' \
+				. | tar -xf - -C "${deploy_path}"
+		fi
 
 		cd "${deploy_path}"
 
