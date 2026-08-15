@@ -86,15 +86,12 @@ ensure_nginx_mount_paths() {
 	local conf_path="${nginx_dir}/nginx.conf"
 	local ssl_dir="${nginx_dir}/ssl"
 
+	# nginx.conf is now baked into the Docker image, so a stale directory on
+	# the host does not break the container. Remove it to keep the deploy path
+	# clean and avoid confusing later diagnostics.
 	if [ -d "${conf_path}" ]; then
 		echo "WARNING: ${conf_path} is a directory from a previous failed deploy; removing it."
 		rm -rf "${conf_path}"
-	fi
-
-	if [ ! -f "${conf_path}" ]; then
-		echo "WARNING: ${conf_path} does not exist after sync; copying from repo."
-		mkdir -p "${nginx_dir}"
-		cp "${deploy_path}/docker/nginx/nginx.conf" "${conf_path}" || true
 	fi
 
 	if [ -f "${ssl_dir}" ]; then
@@ -105,17 +102,22 @@ ensure_nginx_mount_paths() {
 	mkdir -p "${ssl_dir}"
 }
 
-check_nginx_mount() {
+check_nginx_ssl_mount() {
 	local deploy_path="$1"
-	local conf_path="${deploy_path}/docker/nginx/nginx.conf"
+	local nginx_dir="${deploy_path}/docker/nginx"
+	local ssl_dir="${nginx_dir}/ssl"
 
-	if [ ! -f "${conf_path}" ]; then
-		echo "ERROR: ${conf_path} is missing or is not a regular file."
-		ls -lah "${deploy_path}/docker/nginx/" || true
+	# nginx.conf is now baked into the image, so we only verify that the
+	# SSL bind-mount source is a directory. A stale file here would break the
+	# directory mount inside the container.
+	if [ -f "${ssl_dir}" ]; then
+		echo "ERROR: ${ssl_dir} is a file but must be a directory for the SSL mount."
+		ls -lah "${nginx_dir}/" || true
 		exit 1
 	fi
 
-	echo "OK: ${conf_path} is a regular file."
+	mkdir -p "${ssl_dir}"
+	echo "OK: ${ssl_dir} is ready for SSL certificates."
 }
 
 deploy_locally() {
@@ -130,8 +132,8 @@ deploy_locally() {
 	# Sync the built repo (excluding .git and node_modules) to the runtime path.
 	sync_to_deploy_path "${CHECKOUT_DIR}" "${deploy_path}"
 
-	# Fail fast with a clear message if nginx.conf is not a file.
-	check_nginx_mount "${deploy_path}"
+	# Ensure the only remaining nginx host mount (ssl directory) is valid.
+	check_nginx_ssl_mount "${deploy_path}"
 
 	cd "${deploy_path}"
 
@@ -203,7 +205,9 @@ deploy_remotely() {
 				. | tar -xf - -C "${deploy_path}"
 		fi
 
-		# Verify mount paths are still correct after extraction.
+		# Verify the SSL bind-mount source is a directory. nginx.conf is now
+		# baked into the image, so a stale directory there will not break the
+		# container, but we remove it to keep the deploy path clean.
 		if [ -d "${deploy_path}/docker/nginx/nginx.conf" ]; then
 			rm -rf "${deploy_path}/docker/nginx/nginx.conf"
 		fi
@@ -212,9 +216,8 @@ deploy_remotely() {
 		fi
 		mkdir -p "${deploy_path}/docker/nginx/ssl"
 
-		# Fail fast with a clear message if nginx.conf is not a file.
-		if [ ! -f "${deploy_path}/docker/nginx/nginx.conf" ]; then
-			echo "ERROR: ${deploy_path}/docker/nginx/nginx.conf is missing or is not a regular file."
+		if [ -f "${deploy_path}/docker/nginx/ssl" ]; then
+			echo "ERROR: ${deploy_path}/docker/nginx/ssl is a file but must be a directory for the SSL mount."
 			ls -lah "${deploy_path}/docker/nginx/" || true
 			exit 1
 		fi
