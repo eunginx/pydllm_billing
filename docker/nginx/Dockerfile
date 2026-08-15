@@ -7,13 +7,16 @@ COPY nginx.conf /etc/nginx/nginx.conf
 
 # Wait for the Frappe backend service to be resolvable before starting nginx,
 # because nginx resolves upstream hostnames at configuration load time.
-RUN echo '#!/bin/sh\n\
-set -e\n\
-until getent hosts backend > /dev/null 2>&1; do\n\
-    echo "Waiting for backend DNS..."\n\
-    sleep 2\n\
-done\n\
-exec /docker-entrypoint.sh nginx -g "daemon off;"' > /wait-and-run.sh && chmod +x /wait-and-run.sh
+RUN cat > /wait-and-run.sh <<'EOF'
+#!/bin/sh
+set -e
+until getent hosts backend > /dev/null 2>&1; do
+    echo "Waiting for backend DNS..."
+    sleep 2
+done
+exec /docker-entrypoint.sh nginx -g "daemon off;"
+EOF
+RUN chmod +x /wait-and-run.sh
 
 CMD ["/wait-and-run.sh"]
 
