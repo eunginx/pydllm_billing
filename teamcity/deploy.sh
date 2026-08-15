@@ -105,6 +105,19 @@ ensure_nginx_mount_paths() {
 	mkdir -p "${ssl_dir}"
 }
 
+check_nginx_mount() {
+	local deploy_path="$1"
+	local conf_path="${deploy_path}/docker/nginx/nginx.conf"
+
+	if [ ! -f "${conf_path}" ]; then
+		echo "ERROR: ${conf_path} is missing or is not a regular file."
+		ls -lah "${deploy_path}/docker/nginx/" || true
+		exit 1
+	fi
+
+	echo "OK: ${conf_path} is a regular file."
+}
+
 deploy_locally() {
 	local deploy_path="$1"
 
@@ -116,6 +129,9 @@ deploy_locally() {
 
 	# Sync the built repo (excluding .git and node_modules) to the runtime path.
 	sync_to_deploy_path "${CHECKOUT_DIR}" "${deploy_path}"
+
+	# Fail fast with a clear message if nginx.conf is not a file.
+	check_nginx_mount "${deploy_path}"
 
 	cd "${deploy_path}"
 
@@ -195,6 +211,13 @@ deploy_remotely() {
 			rm -f "${deploy_path}/docker/nginx/ssl"
 		fi
 		mkdir -p "${deploy_path}/docker/nginx/ssl"
+
+		# Fail fast with a clear message if nginx.conf is not a file.
+		if [ ! -f "${deploy_path}/docker/nginx/nginx.conf" ]; then
+			echo "ERROR: ${deploy_path}/docker/nginx/nginx.conf is missing or is not a regular file."
+			ls -lah "${deploy_path}/docker/nginx/" || true
+			exit 1
+		fi
 
 		cd "${deploy_path}"
 
