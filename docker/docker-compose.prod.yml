@@ -3,11 +3,13 @@ version: "3.8"
 services:
   backend:
     image: frappe/bench:latest
-    command: bash /workspace/init.sh
+    command: bash /workspace/docker/init.sh
     working_dir: /home/frappe
     environment:
       - SHELL=/bin/bash
       - FRAPPE_SITE_NAME_HEADER=ledger.pn.sorsiri.in
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-123}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
     volumes:
       - .:/workspace
       - frappe-sites:/home/frappe/frappe-bench/sites

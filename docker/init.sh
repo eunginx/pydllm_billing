@@ -1,14 +1,19 @@
-#!bin/bash
+#!/bin/bash
+set -e
+
+export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
+
+MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-123}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
+SITE_NAME="${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}"
 
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
-    cd frappe-bench
+    cd /home/frappe/frappe-bench
     bench start
-else
-    echo "Creating new bench..."
 fi
 
-export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
+echo "Creating new bench..."
 
 bench init --skip-redis-config-generation frappe-bench
 
@@ -27,16 +32,16 @@ sed -i '/watch/d' ./Procfile
 bench get-app erpnext
 bench get-app hrms
 
-bench new-site ledger.pn.sorsiri.in \
---force \
---mariadb-root-password 123 \
---admin-password admin \
---no-mariadb-socket
+bench new-site "${SITE_NAME}" \
+    --force \
+    --mariadb-root-password "${MYSQL_ROOT_PASSWORD}" \
+    --admin-password "${ADMIN_PASSWORD}" \
+    --no-mariadb-socket
 
-bench --site ledger.pn.sorsiri.in install-app hrms
-bench --site ledger.pn.sorsiri.in set-config developer_mode 1
-bench --site ledger.pn.sorsiri.in enable-scheduler
-bench --site ledger.pn.sorsiri.in clear-cache
-bench use ledger.pn.sorsiri.in
+bench --site "${SITE_NAME}" install-app hrms
+bench --site "${SITE_NAME}" set-config developer_mode 1
+bench --site "${SITE_NAME}" enable-scheduler
+bench --site "${SITE_NAME}" clear-cache
+bench use "${SITE_NAME}"
 
 bench start
