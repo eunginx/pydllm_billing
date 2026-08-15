@@ -56,6 +56,12 @@ sync_to_deploy_path() {
 
 	mkdir -p "${target_dir}"
 
+	# Docker bind-mounts fail if the host path type does not match the
+	# container target (file vs directory). A previous failed deploy may
+	# have left nginx.conf as a directory, so clean it up and ensure ssl
+	# is a directory *before* extracting the new files.
+	ensure_nginx_mount_paths "${target_dir}"
+
 	if command -v rsync >/dev/null 2>&1; then
 		rsync -a --delete \
 			--exclude='.git' \
@@ -69,6 +75,34 @@ sync_to_deploy_path() {
 			--exclude='node_modules' \
 			. | tar -xf - -C "${target_dir}"
 	fi
+
+	# Verify mount paths are still correct after extraction.
+	ensure_nginx_mount_paths "${target_dir}"
+}
+
+ensure_nginx_mount_paths() {
+	local deploy_path="$1"
+	local nginx_dir="${deploy_path}/docker/nginx"
+	local conf_path="${nginx_dir}/nginx.conf"
+	local ssl_dir="${nginx_dir}/ssl"
+
+	if [ -d "${conf_path}" ]; then
+		echo "WARNING: ${conf_path} is a directory from a previous failed deploy; removing it."
+		rm -rf "${conf_path}"
+	fi
+
+	if [ ! -f "${conf_path}" ]; then
+		echo "WARNING: ${conf_path} does not exist after sync; copying from repo."
+		mkdir -p "${nginx_dir}"
+		cp "${deploy_path}/docker/nginx/nginx.conf" "${conf_path}" || true
+	fi
+
+	if [ -f "${ssl_dir}" ]; then
+		echo "WARNING: ${ssl_dir} is a file; removing it so it can be a directory."
+		rm -f "${ssl_dir}"
+	fi
+
+	mkdir -p "${ssl_dir}"
 }
 
 deploy_locally() {
@@ -126,6 +160,19 @@ deploy_remotely() {
 
 		# Sync built checkout to deploy path
 		mkdir -p "${deploy_path}"
+
+		# Ensure Docker bind-mount source types match container targets.
+		# A previous failed deploy may have left nginx.conf as a directory.
+		if [ -d "${deploy_path}/docker/nginx/nginx.conf" ]; then
+			echo "WARNING: ${deploy_path}/docker/nginx/nginx.conf is a directory from a previous failed deploy; removing it."
+			rm -rf "${deploy_path}/docker/nginx/nginx.conf"
+		fi
+		if [ -f "${deploy_path}/docker/nginx/ssl" ]; then
+			echo "WARNING: ${deploy_path}/docker/nginx/ssl is a file; removing it."
+			rm -f "${deploy_path}/docker/nginx/ssl"
+		fi
+		mkdir -p "${deploy_path}/docker/nginx/ssl"
+
 		if command -v rsync >/dev/null 2>&1; then
 			rsync -a --delete \
 				--exclude='.git' \
@@ -139,6 +186,15 @@ deploy_remotely() {
 				--exclude='node_modules' \
 				. | tar -xf - -C "${deploy_path}"
 		fi
+
+		# Verify mount paths are still correct after extraction.
+		if [ -d "${deploy_path}/docker/nginx/nginx.conf" ]; then
+			rm -rf "${deploy_path}/docker/nginx/nginx.conf"
+		fi
+		if [ -f "${deploy_path}/docker/nginx/ssl" ]; then
+			rm -f "${deploy_path}/docker/nginx/ssl"
+		fi
+		mkdir -p "${deploy_path}/docker/nginx/ssl"
 
 		cd "${deploy_path}"
 
