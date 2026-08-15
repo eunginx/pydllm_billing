@@ -77,8 +77,8 @@ sync_to_deploy_path() {
 			. | tar -xf - -C "${target_dir}"
 	fi
 
-	# Verify mount paths are still correct after extraction.
-	ensure_nginx_mount_paths "${target_dir}"
+	# Verify critical deployment artifacts exist after extraction.
+	verify_deploy_artifacts "${target_dir}"
 }
 
 ensure_nginx_mount_paths() {
@@ -91,8 +91,28 @@ ensure_nginx_mount_paths() {
 	# clean and avoid confusing later diagnostics.
 	if [ -d "${conf_path}" ]; then
 		echo "WARNING: ${conf_path} is a directory from a previous failed deploy; removing it."
-		rm -rf "${conf_path}"
+		rm -rf "${conf_path}" || true
 	fi
+}
+
+verify_deploy_artifacts() {
+	local deploy_path="$1"
+	local required_files=(
+		"docker/docker-compose.prod.yml"
+		"docker/init.sh"
+		"docker/nginx/nginx.conf"
+		"docker/nginx/Dockerfile"
+	)
+
+	echo "=== Verifying deployment artifacts ==="
+	for f in "${required_files[@]}"; do
+		local full_path="${deploy_path}/${f}"
+		if [ ! -e "${full_path}" ]; then
+			echo "ERROR: Required artifact missing after sync: ${full_path}"
+			exit 1
+		fi
+		echo "OK: ${f}"
+	done
 }
 
 deploy_locally() {
@@ -122,8 +142,8 @@ deploy_locally() {
 	fi
 
 	docker compose -f docker/docker-compose.prod.yml pull
-	docker compose -f docker/docker-compose.prod.yml down
-	docker compose -f docker/docker-compose.prod.yml up -d --build
+	docker compose -f docker/docker-compose.prod.yml down --remove-orphans
+	docker compose -f docker/docker-compose.prod.yml up -d --build --force-recreate
 
 	docker image prune -f
 }
@@ -187,8 +207,8 @@ deploy_remotely() {
 		fi
 
 		docker compose -f docker/docker-compose.prod.yml pull
-		docker compose -f docker/docker-compose.prod.yml down
-		docker compose -f docker/docker-compose.prod.yml up -d --build
+		docker compose -f docker/docker-compose.prod.yml down --remove-orphans
+		docker compose -f docker/docker-compose.prod.yml up -d --build --force-recreate
 
 		docker image prune -f
 EOF
