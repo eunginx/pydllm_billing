@@ -11,7 +11,8 @@ services:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-123}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
     volumes:
-      - .:/workspace
+      # The compose file is inside docker/, so ".." is the repository root.
+      - ..:/workspace
       - frappe-sites:/home/frappe/frappe-bench/sites
       - frappe-logs:/home/frappe/frappe-bench/logs
     networks:
