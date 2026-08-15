@@ -51,10 +51,10 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     # This stack sits behind an external reverse proxy (e.g. jc21/nginx-proxy-manager).
-    # It exposes only HTTP on host port 8080. TLS termination is handled by the
-    # external proxy, which forwards to http://host:8080.
+    # Host port is configurable via NGINX_HOST_PORT (default 8484).
+    # TLS termination is handled by the external proxy.
     ports:
-      - "8080:80"
+      - "${NGINX_HOST_PORT:-8484}:80"
     networks:
       - frappe-network
     depends_on:

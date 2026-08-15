@@ -114,6 +114,13 @@ deploy_locally() {
 		echo "WARNING: .env did not exist; copied from .env.example. Update secrets before next deploy."
 	fi
 
+	# Safety check: the internal nginx must not try to bind privileged host
+	# ports if an external reverse proxy already owns them.
+	if grep -qE '^\s*-\s*"80:80"' docker/docker-compose.prod.yml; then
+		echo "ERROR: docker-compose.prod.yml still binds host port 80. The external reverse proxy owns 80/443."
+		exit 1
+	fi
+
 	docker compose -f docker/docker-compose.prod.yml pull
 	docker compose -f docker/docker-compose.prod.yml down
 	docker compose -f docker/docker-compose.prod.yml up -d --build
