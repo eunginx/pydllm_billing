@@ -79,7 +79,10 @@ log "Creating new bench..."
 # sites/ and logs/ are named volume mounts that already exist (empty).
 # --ignore-exist lets bench init proceed despite the pre-existing directory
 # (otherwise bench init silently returns when the target path exists).
-bench init --skip-redis-config-generation --ignore-exist "${BENCH_DIR}"
+# --frappe-branch pins the Frappe framework to version-16.
+bench init --skip-redis-config-generation --ignore-exist \
+    --frappe-branch version-16 \
+    "${BENCH_DIR}"
 
 cd "${BENCH_DIR}"
 
@@ -93,8 +96,8 @@ bench set-redis-socketio-host redis://redis:6379
 sed -i '/redis/d' ./Procfile
 sed -i '/watch/d' ./Procfile
 
-bench get-app erpnext
-bench get-app hrms
+bench get-app erpnext --branch version-16
+bench get-app hrms --branch version-16
 
 bench new-site "${SITE_NAME}" \
     --force \
