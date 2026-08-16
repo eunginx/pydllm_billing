@@ -191,6 +191,9 @@ deploy_locally() {
 	# The compose file uses DEPLOY_PATH to mount the repo root into /workspace.
 	export DEPLOY_PATH="${deploy_path}"
 
+	# Run docker-compose from the docker/ directory where the compose file lives.
+	cd "${deploy_path}/docker"
+
 	echo "=== Running docker compose from $(pwd) with DEPLOY_PATH=${DEPLOY_PATH} ==="
 
 	# ============================================================
