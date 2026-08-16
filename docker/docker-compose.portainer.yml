@@ -70,6 +70,13 @@ services:
       FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}
     ports:
       - "${NGINX_HOST_PORT:-8484}:8080"
+    # Join the external NPM network so the reverse proxy can reach this
+    # service by container name (e.g. http://frontend:8080) instead of
+    # host.docker.internal. The internal frappe-network is kept for
+    # backend/websocket routing.
+    networks:
+      - frappe-network
+      - npm-network
     depends_on:
       - backend
       - websocket
@@ -138,3 +145,10 @@ volumes:
 networks:
   frappe-network:
     driver: bridge
+  # External network shared with the Nginx Proxy Manager host. NPM lives on
+  # this network (named `monitor_monitoring` on the NPM host), so the frontend
+  # joins it to be reachable by container name. The name is configurable via
+  # NPM_NETWORK in case the NPM network has a different name on another host.
+  npm-network:
+    name: ${NPM_NETWORK:-monitor_monitoring}
+    external: true
