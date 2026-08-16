@@ -28,20 +28,21 @@ This repository hosts the production deployment of Frappe HR for **ledger.pn.sor
 
 ## Production Deployment
 
-The production stack is orchestrated with Docker Compose and served behind nginx. Deployment is triggered automatically on pushes to the `main` branch via GitHub Actions.
+The production stack is a single Docker image (built from the upstream `frappe/frappe_docker` layered Containerfile) orchestrated with Docker Compose and served behind Nginx Proxy Manager. Deployment is triggered automatically on pushes to the `main` branch via GitHub Actions → GHCR → Portainer.
 
 ```sh
 git clone https://github.com/eunginx/pydllm_billing.git
 cd pydllm_billing
 cp .env.example .env
-# edit .env and set strong passwords + SSL certificates in docker/nginx/ssl/
-docker compose -f docker/docker-compose.prod.yml up -d --build
+# edit .env and set strong passwords
+docker compose -f docker/docker-compose.portainer.yml up -d
 ```
 
 Required before first deploy:
-- Place TLS certificate at `docker/nginx/ssl/fullchain.pem`
-- Place TLS key at `docker/nginx/ssl/privkey.pem`
 - DNS `ledger.pn.sorsiri.in` pointing to the host running Docker.
+- An Nginx Proxy Manager proxy host forwarding to `frontend:8080` (Websockets ON).
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full guide.
 
 ## Motivation
 This project started from the upstream Frappe HR product and is configured for the PYDLLM Billing organisation.

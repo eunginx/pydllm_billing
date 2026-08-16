@@ -12,202 +12,109 @@ This document describes the production deployment setup for the Frappe HRMS inst
 
 ```mermaid
 flowchart LR
-    User -->|HTTPS| Nginx[Nginx :443]
-    Nginx -->|proxy_pass| Frappe[Frappe Backend :8000]
-    Nginx -->|/socket.io/| SocketIO[Frappe Socket.IO :9000]
-    Frappe --> MariaDB[(MariaDB 10.8)]
-    Frappe --> Redis[(Redis)]
+    User -->|HTTPS| NPM[Nginx Proxy Manager :443]
+    NPM -->|proxy_pass| Frontend[frontend nginx :8080]
+    Frontend -->|/| Backend[backend gunicorn :8000]
+    Frontend -->|/socket.io/| Websocket[websocket socket.io :9000]
+    Backend --> MariaDB[(MariaDB 10.8)]
+    Backend --> Redis[(Redis)]
+    Queue[queue-short / queue-long] --> Redis
+    Scheduler[scheduler] --> Redis
 ```
 
-Components:
+A **single** production image (`ghcr.io/eunginx/pydllm_billing`) is built from the upstream
+[`frappe/frappe_docker`](https://github.com/frappe/frappe_docker) layered Containerfile, with
+`frappe`, `erpnext`, `payments`, and `hrms` pre-installed at **build time**. No runtime
+`bench init` is needed.
 
-| Component | Service in Compose | Purpose |
-|---|---|---|
-| Nginx | `nginx` | TLS termination and reverse proxy |
-| Frappe Bench | `backend` | Frappe/ERPNext/HRMS application server |
-| MariaDB | `mariadb` | Database |
-| Redis | `redis` | Cache, queue, and socket.io broker |
+## Components
 
-## Files Added for Production
+| Service | Purpose |
+|---|---|
+| `configurator` | One-shot: writes `apps.txt`, points bench at mariadb/redis, creates the site + installs erpnext/hrms on first boot |
+| `backend` | Gunicorn application server (`:8000`) |
+| `frontend` | Nginx reverse proxy (`:8080`) — routes HTTP to backend and `/socket.io/` to websocket |
+| `websocket` | Socket.IO server (`:9000`) |
+| `queue-short` / `queue-long` | Background workers |
+| `scheduler` | Cron / scheduler |
+| `mariadb` | Database |
+| `redis` | Cache, queue, and socket.io broker |
+
+## Files
 
 | File | Purpose |
 |---|---|
-| [docker/docker-compose.prod.yml](docker/docker-compose.prod.yml) | Production Docker Compose stack |
-| [docker/nginx/nginx.conf](docker/nginx/nginx.conf) | Nginx reverse proxy configuration |
+| [docker/docker-compose.portainer.yml](docker/docker-compose.portainer.yml) | Production Docker Compose stack (single image) |
+| [.github/helper/apps.json](.github/helper/apps.json) | Apps pre-installed into the image at build time |
+| [.github/workflows/deploy-portainer.yml](.github/workflows/deploy-portainer.yml) | Builds the image, pushes to GHCR, triggers the Portainer webhook |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml) | CI validation (install deps + build frontend assets) |
+| [scripts/build-local.sh](scripts/build-local.sh) | Local image build helper |
 | [.env.example](.env.example) | Environment variable template |
-| [teamcity/deploy.sh](teamcity/deploy.sh) | TeamCity deployment script |
-| [.github/workflows/ci.yml](.github/workflows/ci.yml) | GitHub Actions CI workflow |
-| [.github/workflows/deploy.yml](.github/workflows/deploy.yml) | GitHub Actions deploy workflow |
 
-## Pre-Deployment Requirements
+## CI/CD Flow (GitHub Actions → GHCR → Portainer)
 
-Before the first deployment, ensure the production host has:
+1. **Push to `main`** triggers `deploy-portainer.yml`.
+2. The workflow checks out `frappe/frappe_docker` and builds the layered image with
+   `FRAPPE_BRANCH=version-16` and the `apps.json` secret.
+3. The image is pushed to `ghcr.io/eunginx/pydllm_billing:latest`.
+4. The Portainer webhook is fired, which redeploys the stack (Portainer GitOps auto-update
+   also polls the repo every 1 minute).
 
-1. **Docker Engine** and **Docker Compose** plugin installed.
-2. **TeamCity Agent** running on the same host (local deploy mode).
-3. **Node.js 20 LTS** and **npm** installed on the TeamCity agent.
-   ```bash
-   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-   apt-get install -y nodejs
-   ```
-4. **TLS certificates** placed at:
-   - `docker/nginx/ssl/fullchain.pem`
-   - `docker/nginx/ssl/privkey.pem`
-5. **DNS record** for `ledger.pn.sorsiri.in` pointing to the host.
-
-## TeamCity Configuration
-
-### Build Step
-
-Create a single **Command Line** build step with:
-
-```bash
-./teamcity/deploy.sh
-```
-
-### Environment Variables
-
-Configure these as **Environment Variables** in the TeamCity build configuration:
+## Environment Variables (Portainer)
 
 | Variable | Required | Example | Description |
 |---|---|---|---|
-| `DEPLOY_PATH` | Yes | `/opt/pydllm_billing` | Runtime path for the deployed application |
-| `DEPLOY_HOST` | No | `user@ledger.pn.sorsiri.in` | Optional SSH target if agent is remote |
+| `FRAPPE_SITE_NAME_HEADER` | Yes | `ledger.pn.sorsiri.in` | Site domain |
 | `MYSQL_ROOT_PASSWORD` | Yes | `change-me` | MariaDB root password |
 | `ADMIN_PASSWORD` | Yes | `change-me` | Frappe Administrator password |
+| `NGINX_HOST_PORT` | No | `8484` | Host port for the frontend nginx |
+| `NPM_NETWORK` | No | `monitor_monitoring` | External NPM network name |
 
-If `DEPLOY_HOST` is omitted, the script runs in **local deploy mode** and deploys on the agent host itself.
+## Reverse Proxy (Nginx Proxy Manager)
 
-### SSH Keys (only for remote deploy mode)
+The `frontend` service joins the external NPM network (`monitor_monitoring`), so NPM can
+reach it by container name. Create a proxy host for `ledger.pn.sorsiri.in`:
 
-If `DEPLOY_HOST` is set, ensure the TeamCity agent can SSH to the target host without a password. Add the agent's public key to `~/.ssh/authorized_keys` on the target.
-
-## Deployment Flow
-
-The `teamcity/deploy.sh` script performs the following steps:
-
-1. **Build frontend assets**
-   - Runs in the TeamCity checkout directory (`/opt/buildagent/work/...`).
-   - Uses local `npm` to run:
-     ```bash
-     npm install
-     npm run build
-     ```
-2. **Sync to runtime path**
-   - Uses `rsync -a --delete` to copy files from the checkout to `DEPLOY_PATH`.
-   - Excludes `.git` and `node_modules` to keep the runtime path clean.
-3. **Ensure environment file**
-   - If `.env` does not exist, copies `.env.example` to `.env`.
-4. **Start production stack**
-   - Pulls images.
-   - Stops any running stack.
-   - Starts the stack with `--build`.
-   ```bash
-   docker compose -f docker/docker-compose.prod.yml up -d --build
-   ```
-5. **Cleanup**
-   - Prunes dangling Docker images.
-
-## Reverse Proxy Settings
-
-Nginx is included in the production compose and listens on:
-
-| Port | Protocol | Purpose |
-|---|---|---|
-| 80 | HTTP | Redirects to HTTPS |
-| 443 | HTTPS | Serves the application |
-
-Upstream targets:
-
-| Path | Upstream |
+| Field | Value |
 |---|---|
-| `/` | `backend:8000` |
-| `/assets/` | `backend:8000` |
-| `/socket.io/` | `backend:9000` |
+| **Forward Hostname / IP** | `frontend` |
+| **Forward Port** | `8080` |
+| **Websockets Support** | ✅ ON (required for socket.io) |
 
-Critical header: `proxy_set_header Host $host;` — this ensures Frappe serves the correct site (`ledger.pn.sorsiri.in`).
+Then add SSL (Let's Encrypt) and enable **Force SSL** if HTTPS is desired.
 
-## First-Time Setup on Production Host
+> **Note:** container-name routing (`frontend:8080`) only works when NPM and the Frappe
+> stack share the same Docker host. If they are on separate hosts, use the host IP +
+> published port (`8484`) instead.
+
+## Local Build
 
 ```bash
-# 1. Clone the repo
-sudo mkdir -p /opt/pydllm_billing
-sudo chown $USER:$USER /opt/pydllm_billing
-git clone --branch main --single-branch https://github.com/eunginx/pydllm_billing.git /opt/pydllm_billing
-
-# 2. Configure environment
-cd /opt/pydllm_billing
-cp .env.example .env
-# Edit .env and set strong passwords
-
-# 3. Add TLS certificates
-sudo mkdir -p docker/nginx/ssl
-sudo cp /path/to/fullchain.pem docker/nginx/ssl/fullchain.pem
-sudo cp /path/to/privkey.pem docker/nginx/ssl/privkey.pem
-
-# 4. Start the stack
-sudo docker compose -f docker/docker-compose.prod.yml up -d --build
+./scripts/build-local.sh            # build for the host arch (arm64 on Mac)
+./scripts/build-local.sh --push     # also push to GHCR (needs docker login)
 ```
 
-After the first deploy, TeamCity will manage subsequent updates automatically.
+> The local build targets the **host architecture**. The CI workflow builds **amd64** on
+> `ubuntu-latest` for EC2, so you do not need to push a local arm64 image for EC2.
 
-## Frappe Site Name
-
-The site is configured as `ledger.pn.sorsiri.in` in:
-
-- [docker/init.sh](docker/init.sh#L30) — for the initial site creation.
-- [docker/docker-compose.prod.yml](docker/docker-compose.prod.yml) — via `FRAPPE_SITE_NAME_HEADER`.
-- [docker/nginx/nginx.conf](docker/nginx/nginx.conf) — via `server_name`.
-
-## Development vs Production
-
-| Environment | Compose File | Access URL |
-|---|---|---|
-| Development | [docker/docker-compose.yml](docker/docker-compose.yml) | `http://ledger.pn.sorsiri.in:8000` |
-| Production | [docker/docker-compose.prod.yml](docker/docker-compose.prod.yml) | `https://ledger.pn.sorsiri.in` |
-
-Default login credentials:
+## Default Login
 
 - Username: `Administrator`
-- Password: `admin` (set via `ADMIN_PASSWORD`)
+- Password: set via `ADMIN_PASSWORD`
 
 ## Troubleshooting
 
-### Build fails with "npm is not installed"
+### Stack fails with "network monitor_monitoring not found"
 
-Install Node.js 20 LTS on the TeamCity agent:
+The external NPM network must exist on the Docker host before the stack deploys. It is
+created by the NPM stack. If the network has a different name, set `NPM_NETWORK`.
 
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
-```
+### MariaDB healthcheck fails with "Access denied"
 
-### Frappe serves the wrong site
+Ensure `MYSQL_PWD` is set to the same value as `MYSQL_ROOT_PASSWORD` (the healthcheck
+script reads `MYSQL_PWD` for authentication).
 
-Ensure `FRAPPE_SITE_NAME_HEADER=ledger.pn.sorsiri.in` is set in `.env` and the nginx `Host` header is forwarded.
+### Site not created
 
-### TLS certificate errors
-
-Verify the certificate files exist and are readable inside the nginx container:
-
-```bash
-sudo docker compose -f docker/docker-compose.prod.yml exec nginx ls -la /etc/nginx/ssl
-```
-
-### Container cannot access database
-
-Ensure the `backend` container can resolve `mariadb` and the `MYSQL_ROOT_PASSWORD` in `.env` matches the database state.
-
-## Change Log
-
-| Date | Commit | Change |
-|---|---|---|
-| 2026-08-13 | `2eb220d` | Initial commit with site `ledger.pn.sorsiri.in` |
-| 2026-08-13 | `ed73861` | Added production compose, nginx, workflows, README |
-| 2026-08-13 | `90ae71d` | Documented TeamCity environment variables |
-| 2026-08-13 | `1547465` | Support local TeamCity agent deployment |
-| 2026-08-13 | `992064d` | Added Docker Node fallback for frontend build |
-| 2026-08-13 | `73cd2e1` | Fixed `workspaces` typo in `package.json` |
-| 2026-08-13 | `9feffbe` | Made root `package.json` scripts npm-compatible |
-| 2026-08-13 | `d689a1d` | Build in checkout dir, rsync to deploy path |
-| 2026-08-14 | `8540f6d` | Require local npm/Node on agent |
+Check the `configurator` container logs. It should exit with code `0` after creating the
+site and installing `erpnext` + `hrms`. A non-zero exit means the site creation failed.
