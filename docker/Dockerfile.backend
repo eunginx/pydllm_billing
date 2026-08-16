@@ -7,24 +7,21 @@ FROM frappe/bench:latest
 # Install additional system dependencies if needed
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy init script into image (runs at container startup via compose command)
+# Copy init + entrypoint scripts into the image.
 COPY docker/init.sh /usr/local/bin/init.sh
-RUN chmod +x /usr/local/bin/init.sh
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/init.sh /usr/local/bin/entrypoint.sh
 
 # Create bench directory structure, owned by the frappe user.
 RUN mkdir -p /home/frappe/frappe-bench \
     && chown -R frappe:frappe /home/frappe
 
-# bench and its Python modules are installed in the frappe user's
-# environment (pyenv + ~/.local). Running as root breaks `bench` with
-# "ModuleNotFoundError: No module named 'bench'", so switch back to frappe.
-USER frappe
-
 WORKDIR /home/frappe
 
-# The actual bench initialization happens at runtime via init.sh
-# This allows the same image to work for fresh installs and existing sites
-CMD ["bash", "/usr/local/bin/init.sh"]
+# The entrypoint runs as root to fix volume ownership, then drops to the
+# frappe user (bench's Python modules live in the frappe user's env, so
+# running bench as root fails with "No module named 'bench'").
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
