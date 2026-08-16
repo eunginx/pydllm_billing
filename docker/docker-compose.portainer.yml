@@ -1,32 +1,106 @@
 version: "3.8"
 
+# Single-image production stack built from the upstream frappe/frappe_docker
+# layered Containerfile. The image pre-installs frappe + erpnext + payments +
+# hrms at build time, so no runtime `bench init` is needed.
+#
+# Portainer environment variables (unchanged):
+#   FRAPPE_SITE_NAME_HEADER  - site domain (e.g. ledger.pn.sorsiri.in)
+#   MYSQL_ROOT_PASSWORD      - MariaDB root password
+#   ADMIN_PASSWORD           - Frappe Administrator password
+#   NGINX_HOST_PORT          - host port for the frontend nginx (default 8484)
+
+x-backend-defaults: &backend_defaults
+  image: ${IMAGE:-ghcr.io/eunginx/pydllm_billing:latest}
+  restart: unless-stopped
+  volumes:
+    - frappe-sites:/home/frappe/frappe-bench/sites
+  networks:
+    - frappe-network
+
 services:
-  backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/eunginx/pydllm_billing-backend:latest}
-    # The image ENTRYPOINT (docker/entrypoint.sh) fixes volume ownership as
-    # root, then drops to the frappe user and runs /usr/local/bin/init.sh.
-    # No command override is needed here.
-    working_dir: /home/frappe
+  # One-shot: writes apps.txt, points the bench at mariadb/redis, and creates
+  # the site (with erpnext + hrms installed) on first boot.
+  configurator:
+    <<: *backend_defaults
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host mariadb;
+        bench set-config -gp db_port 3306;
+        bench set-config -g redis_cache "redis://redis:6379";
+        bench set-config -g redis_queue "redis://redis:6379";
+        bench set-config -g redis_socketio "redis://redis:6379";
+        if [ ! -d "sites/${FRAPPE_SITE_NAME_HEADER}" ]; then
+          bench new-site --no-mariadb-socket
+            --mariadb-root-password "${MYSQL_ROOT_PASSWORD}"
+            --admin-password "${ADMIN_PASSWORD}"
+            "${FRAPPE_SITE_NAME_HEADER}";
+          bench --site "${FRAPPE_SITE_NAME_HEADER}" install-app erpnext;
+          bench --site "${FRAPPE_SITE_NAME_HEADER}" install-app hrms;
+        fi
     environment:
-      - SHELL=/bin/bash
-      - FRAPPE_SITE_NAME_HEADER=${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-    volumes:
-      - frappe-sites:/home/frappe/frappe-bench/sites
-      - frappe-logs:/home/frappe/frappe-bench/logs
-    networks:
-      - frappe-network
-    restart: unless-stopped
+      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     depends_on:
-      - mariadb
-      - redis
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/method/healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      mariadb:
+        condition: service_healthy
+    restart: on-failure
+
+  backend:
+    <<: *backend_defaults
+    environment:
+      GUNICORN_THREADS: 4
+      GUNICORN_WORKERS: 2
+      GUNICORN_TIMEOUT: 120
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  frontend:
+    <<: *backend_defaults
+    command: nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}
+    ports:
+      - "${NGINX_HOST_PORT:-8484}:8080"
+    depends_on:
+      - backend
+      - websocket
+
+  websocket:
+    <<: *backend_defaults
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  queue-short:
+    <<: *backend_defaults
+    command: bench worker --queue short,default
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  queue-long:
+    <<: *backend_defaults
+    command: bench worker --queue long,default,short
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  scheduler:
+    <<: *backend_defaults
+    command: bench schedule
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
 
   mariadb:
     image: mariadb:10.8
@@ -42,6 +116,12 @@ services:
     networks:
       - frappe-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:alpine
@@ -49,19 +129,8 @@ services:
       - frappe-network
     restart: unless-stopped
 
-  nginx:
-    image: ${NGINX_IMAGE:-ghcr.io/eunginx/pydllm_billing-nginx:latest}
-    ports:
-      - "${NGINX_HOST_PORT:-8484}:80"
-    networks:
-      - frappe-network
-    restart: unless-stopped
-    depends_on:
-      - backend
-
 volumes:
   frappe-sites:
-  frappe-logs:
   mariadb-data:
 
 networks:
