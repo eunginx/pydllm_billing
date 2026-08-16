@@ -114,13 +114,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy to Portainer
+      - name: Read compose file
+        id: compose
+        run: |
+          cat docker/docker-compose.portainer.yml
+          echo "compose<<EOF" >> $GITHUB_OUTPUT
+          cat docker/docker-compose.portainer.yml >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Deploy to Portainer (create or update)
         uses: portainer/portainer-action@v2
         with:
           endpoint: ${{ env.PORTAINER_ENDPOINT }}
           apiKey: ${{ env.PORTAINER_API_KEY }}
           stackName: ${{ env.STACK_NAME }}
-          composeFilePath: docker/docker-compose.portainer.yml
+          composeFileContent: ${{ steps.compose.outputs.compose }}
           envVars: |
             BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
             NGINX_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-nginx:latest
