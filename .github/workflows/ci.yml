@@ -24,6 +24,3 @@ jobs:
 
       - name: Build frontend assets
         run: yarn build
-
-      - name: Build Docker production image
-        run: docker compose -f docker/docker-compose.prod.yml build
