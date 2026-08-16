@@ -122,13 +122,36 @@ verify_deploy_artifacts() {
 		echo "WARNING: ${init_path} is not executable; chmod +x applied."
 		chmod +x "${init_path}" || true
 	fi
-	file "${init_path}" || true
+	# Use 'file' command if available, otherwise use 'head' for shebang check
+	if command -v file >/dev/null 2>&1; then
+		file "${init_path}" || true
+	else
+		echo "Note: 'file' command not available; checking shebang with head:"
+		head -1 "${init_path}" || true
+	fi
 }
 
 deploy_locally() {
 	local deploy_path="$1"
 
-	echo "=== Local deploy: checkout=${CHECKOUT_DIR}, deploy_path=${deploy_path} ==="
+	# ============================================================
+	# TEAMCITY DEPLOYMENT DIAGNOSTICS
+	# ============================================================
+	echo "============================================================"
+	echo "TEAMCITY DEPLOYMENT"
+	echo "============================================================"
+	echo "DATE=$(date -Is)"
+	echo "HOST=$(hostname)"
+	echo "USER=$(whoami)"
+	echo "PWD=$(pwd)"
+	echo "BUILD_CHECKOUT_DIR=${CHECKOUT_DIR:-unknown}"
+	echo "DEPLOY_PATH=${deploy_path:-unknown}"
+	echo "============================================================"
+
+	# Verify TeamCity checkout directory
+	echo "Repository checkout:"
+	pwd
+	ls -lah
 
 	# Build frontend assets in the TeamCity checkout directory.
 	# The checkout is guaranteed to contain the repo files.
@@ -137,7 +160,21 @@ deploy_locally() {
 	# Sync the built repo (excluding .git and node_modules) to the runtime path.
 	sync_to_deploy_path "${CHECKOUT_DIR}" "${deploy_path}"
 
-	cd "${deploy_path}"
+	# Verify deployment directory
+	echo "Deployment directory:"
+	ls -lah "${deploy_path}"
+
+	echo "Docker files in deployment:"
+	ls -lah "${deploy_path}/docker"
+
+	echo "init.sh:"
+	ls -lah "${deploy_path}/docker/init.sh"
+
+	# Verify critical deployment artifacts
+	test -f "${deploy_path}/docker/init.sh" || { echo "ERROR: init.sh missing"; exit 1; }
+	test -f "${deploy_path}/docker/nginx/nginx.conf" || { echo "ERROR: nginx.conf missing"; exit 1; }
+	test -f "${deploy_path}/docker/nginx/Dockerfile" || { echo "ERROR: nginx Dockerfile missing"; exit 1; }
+	test -f "${deploy_path}/docker/docker-compose.prod.yml" || { echo "ERROR: docker-compose.prod.yml missing"; exit 1; }
 
 	if [ ! -f .env ]; then
 		cp .env.example .env
@@ -146,7 +183,7 @@ deploy_locally() {
 
 	# Safety check: the internal nginx must not try to bind privileged host
 	# ports if an external reverse proxy already owns them.
-	if grep -qE '^\s*-\s*"80:80"' docker/docker-compose.prod.yml; then
+	if grep -qE '^\s*-\s*"80:80"' docker-compose.prod.yml; then
 		echo "ERROR: docker-compose.prod.yml still binds host port 80. The external reverse proxy owns 80/443."
 		exit 1
 	fi
@@ -154,15 +191,55 @@ deploy_locally() {
 	# The compose file uses DEPLOY_PATH to mount the repo root into /workspace.
 	export DEPLOY_PATH="${deploy_path}"
 
-	# Run compose from the docker/ directory so the project name is stable.
-	cd "${deploy_path}/docker"
 	echo "=== Running docker compose from $(pwd) with DEPLOY_PATH=${DEPLOY_PATH} ==="
+
+	# ============================================================
+	# DOCKER COMPOSE DIAGNOSTICS BEFORE UP
+	# ============================================================
+	echo "=== Docker Compose resolved configuration ==="
+	docker compose -f docker-compose.prod.yml config > /tmp/docker-compose-resolved.yml 2>&1 || true
+	grep -n -B5 -A10 -E '/workspace|init\.sh|entrypoint|command' /tmp/docker-compose-resolved.yml 2>/dev/null || true
+
+	# Diagnostics: show the init script on the host before starting compose.
+	echo "=== Host file check ==="
+	ls -lah "${DEPLOY_PATH}/docker/init.sh" || true
+	if command -v file >/dev/null 2>&1; then
+		file "${DEPLOY_PATH}/docker/init.sh" || true
+	else
+		head -1 "${DEPLOY_PATH}/docker/init.sh" || true
+	fi
 
 	docker compose -f docker-compose.prod.yml pull
 	docker compose -f docker-compose.prod.yml down --remove-orphans
+	docker compose -f docker-compose.prod.yml rm -f || true
 	docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 
 	docker image prune -f
+
+	# ============================================================
+	# POST-DEPLOYMENT VALIDATION
+	# ============================================================
+	echo "=== Post-deployment validation ==="
+	docker compose -f docker-compose.prod.yml ps
+
+	echo "=== Container logs (tail 200) ==="
+	docker compose -f docker-compose.prod.yml logs --no-color --tail=200 2>&1 | head -500
+
+	# Check each service health
+	for service in backend nginx mariadb redis; do
+		container=$(docker compose -f docker-compose.prod.yml ps -q ${service} 2>/dev/null || true)
+		if [ -n "${container}" ]; then
+			status=$(docker inspect "${container}" --format '{{.State.Status}} {{.State.ExitCode}} {{.State.Error}}' 2>/dev/null || true)
+			echo "Service ${service}: ${status}"
+			if [ "${status}" = "exited 0 " ] || [ "${status}" = "exited 1 " ] || [ "${status}" = "exited 125 " ] || [ "${status}" = "exited 127 " ]; then
+				echo "ERROR: Service ${service} exited unexpectedly"
+				docker logs "${container}" --tail=200
+				exit 1
+			fi
+		fi
+	done
+
+	echo "=== DEPLOYMENT SUCCESS ==="
 }
 
 deploy_remotely() {
@@ -228,11 +305,50 @@ deploy_remotely() {
 
 		# Run compose from the docker/ directory so the project name is stable.
 		cd "${deploy_path}/docker"
+		echo "=== Running docker compose from \$(pwd) with DEPLOY_PATH=\${DEPLOY_PATH} ==="
+
+		# Docker Compose diagnostics before up
+		echo "=== Docker Compose resolved configuration ==="
+		docker compose -f docker-compose.prod.yml config > /tmp/docker-compose-resolved.yml 2>&1 || true
+		grep -n -B5 -A10 -E '/workspace|init\.sh|entrypoint|command' /tmp/docker-compose-resolved.yml 2>/dev/null || true
+
+		# Host file check
+		echo "=== Host file check ==="
+		ls -lah "\${DEPLOY_PATH}/docker/init.sh" || true
+		if command -v file >/dev/null 2>&1; then
+			file "\${DEPLOY_PATH}/docker/init.sh" || true
+		else
+			head -1 "\${DEPLOY_PATH}/docker/init.sh" || true
+		fi
+
 		docker compose -f docker-compose.prod.yml pull
 		docker compose -f docker-compose.prod.yml down --remove-orphans
+		docker compose -f docker-compose.prod.yml rm -f || true
 		docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 
 		docker image prune -f
+
+		# Post-deployment validation
+		echo "=== Post-deployment validation ==="
+		docker compose -f docker-compose.prod.yml ps
+
+		echo "=== Container logs (tail 200) ==="
+		docker compose -f docker-compose.prod.yml logs --no-color --tail=200 2>&1 | head -500
+
+		for service in backend nginx mariadb redis; do
+			container=\$(docker compose -f docker-compose.prod.yml ps -q \${service} 2>/dev/null || true)
+			if [ -n "\${container}" ]; then
+				status=\$(docker inspect "\${container}" --format '{{.State.Status}} {{.State.ExitCode}} {{.State.Error}}' 2>/dev/null || true)
+				echo "Service \${service}: \${status}"
+				if [ "\${status}" = "exited 0 " ] || [ "\${status}" = "exited 1 " ] || [ "\${status}" = "exited 125 " ] || [ "\${status}" = "exited 127 " ]; then
+					echo "ERROR: Service \${service} exited unexpectedly"
+					docker logs "\${container}" --tail=200
+					exit 1
+				fi
+			fi
+		done
+
+		echo "=== DEPLOYMENT SUCCESS ==="
 EOF
 }
 

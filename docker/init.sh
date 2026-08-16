@@ -1,6 +1,61 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
+# ============================================================
+# INIT SCRIPT STARTUP DIAGNOSTICS
+# ============================================================
+log() {
+    echo "[INIT] $(date -Is) $*"
+}
+
+log "============================================================"
+log "INIT SCRIPT START"
+log "============================================================"
+log "PID=$$"
+log "USER=$(id -un)"
+log "UID=$(id -u)"
+log "GID=$(id -g)"
+log "PWD=$(pwd)"
+log "SCRIPT=$0"
+log "HOSTNAME=$(hostname)"
+log "PATH=$PATH"
+
+log "Script location:"
+ls -lah "$(dirname "$0")" 2>/dev/null || true
+
+log "Checking expected files..."
+for path in \
+    "/workspace" \
+    "/workspace/docker" \
+    "/workspace/docker/init.sh" \
+    "/opt/pydllm_billing" \
+    "/opt/pydllm_billing/docker" \
+    "/opt/pydllm_billing/docker/init.sh"
+do
+    if [ -e "$path" ]; then
+        log "FOUND: $path"
+        ls -ld "$path" 2>/dev/null || true
+    else
+        log "MISSING: $path"
+    fi
+done
+
+log "Environment (filtered):"
+env | grep -v -E 'PASSWORD|SECRET|TOKEN|KEY|API_KEY|MASTER_KEY|DATABASE_URL' | sort
+
+log "============================================================"
+log "INIT SCRIPT CONTINUING"
+log "============================================================"
+
+# ============================================================
+# ERROR TRAP
+# ============================================================
+trap 'rc=$?; log "[ERROR] command failed: ${BASH_COMMAND}"; log "[ERROR] exit_code=${rc} line=${LINENO}"; exit "$rc"' ERR
+trap 'log "[EXIT] rc=$?"' EXIT
+
+# ============================================================
+# MAIN INIT LOGIC
+# ============================================================
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
 MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-123}"
@@ -9,20 +64,21 @@ SITE_NAME="${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}"
 
 BENCH_DIR="/home/frappe/frappe-bench"
 
-# Check if bench is fully initialized (has apps and sites)
+# Check if bench is fully initialized (has apps/frappe AND sites)
 if [ -d "${BENCH_DIR}/apps/frappe" ] && [ -d "${BENCH_DIR}/sites" ]; then
-    echo "Bench fully initialized, starting..."
+    log "Bench fully initialized, starting..."
     cd "${BENCH_DIR}"
     bench start
 fi
 
 # Clean up any incomplete bench directory from failed runs
+# Check for ANY bench directory existence (not just complete)
 if [ -d "${BENCH_DIR}" ]; then
-    echo "Removing incomplete bench directory..."
+    log "Removing incomplete bench directory: ${BENCH_DIR}"
     rm -rf "${BENCH_DIR}"
 fi
 
-echo "Creating new bench..."
+log "Creating new bench..."
 
 bench init --skip-redis-config-generation frappe-bench
 
