@@ -67,25 +67,24 @@ SITE_NAME="${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}"
 
 BENCH_DIR="/home/frappe/frappe-bench"
 
-# Check if bench is fully initialized (has apps/frappe AND sites)
-if [ -d "${BENCH_DIR}/apps/frappe" ] && [ -d "${BENCH_DIR}/sites" ]; then
-    log "Bench fully initialized, starting..."
+# If the bench is already initialized, just start it.
+if [ -d "${BENCH_DIR}/apps/frappe" ]; then
+    log "Bench already exists, skipping init"
     cd "${BENCH_DIR}"
     bench start
 fi
 
-# Clean up any incomplete bench directory from failed runs
-# Check for ANY bench directory existence (not just complete)
-if [ -d "${BENCH_DIR}" ]; then
-    log "Removing incomplete bench directory: ${BENCH_DIR}"
-    rm -rf "${BENCH_DIR}"
-fi
-
 log "Creating new bench..."
 
-bench init --skip-redis-config-generation frappe-bench
+# sites/ and logs/ are named volume mounts and already exist, so bench init
+# cannot create frappe-bench directly (non-empty dir). Initialize into a
+# temp dir and merge the results, preserving the volume mounts.
+tmp_bench="$(mktemp -d /tmp/frappe-bench.XXXXXX)"
+bench init --skip-redis-config-generation "${tmp_bench}"
+cp -a "${tmp_bench}/." "${BENCH_DIR}/"
+rm -rf "${tmp_bench}"
 
-cd frappe-bench
+cd "${BENCH_DIR}"
 
 # Use containers instead of localhost
 bench set-mariadb-host mariadb
