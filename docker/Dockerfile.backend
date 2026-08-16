@@ -14,8 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY docker/init.sh /usr/local/bin/init.sh
 RUN chmod +x /usr/local/bin/init.sh
 
-# Create bench directory structure
-RUN mkdir -p /home/frappe/frappe-bench
+# Create bench directory structure, owned by the frappe user.
+RUN mkdir -p /home/frappe/frappe-bench \
+    && chown -R frappe:frappe /home/frappe
+
+# bench and its Python modules are installed in the frappe user's
+# environment (pyenv + ~/.local). Running as root breaks `bench` with
+# "ModuleNotFoundError: No module named 'bench'", so switch back to frappe.
+USER frappe
 
 WORKDIR /home/frappe
 
