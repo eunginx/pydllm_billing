@@ -111,6 +111,8 @@ services:
       - --skip-innodb-read-only-compressed
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      # healthcheck.sh connects as root and reads MYSQL_PWD for auth.
+      MYSQL_PWD: ${MYSQL_ROOT_PASSWORD}
     volumes:
       - mariadb-data:/var/lib/mysql
     networks:
