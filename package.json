@@ -12,7 +12,7 @@
   "bugs": {
     "url": "https://github.com/eunginx/pydllm_billing/issues"
   },
-  "workspaces": ["frontend", "roster", "frappe-ui"],
+  "workspaces": ["frontend", "roster"],
   "scripts": {
     "dev-pwa": "cd frontend && npm run dev",
     "dev-roster": "cd roster && npm run dev",

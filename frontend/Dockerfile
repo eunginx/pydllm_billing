@@ -8,10 +8,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY frontend/package*.json ./frontend/
 COPY roster/package*.json ./roster/
-COPY frappe-ui/package*.json ./frappe-ui/
 
-# Install dependencies
-RUN npm ci --workspaces --include-workspace-root
+# Install dependencies (no package-lock.json in repo; use npm install)
+RUN npm install --workspaces --include-workspace-root
 
 # Copy source code
 COPY . .
