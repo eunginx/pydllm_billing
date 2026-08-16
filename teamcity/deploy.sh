@@ -141,9 +141,14 @@ deploy_locally() {
 		exit 1
 	fi
 
-	docker compose -f docker/docker-compose.prod.yml pull
-	docker compose -f docker/docker-compose.prod.yml down --remove-orphans
-	docker compose -f docker/docker-compose.prod.yml up -d --build --force-recreate
+	# The compose file uses DEPLOY_PATH to mount the repo root into /workspace.
+	export DEPLOY_PATH="${deploy_path}"
+
+	# Run compose from the docker/ directory so the project name is stable.
+	cd "${deploy_path}/docker"
+	docker compose -f docker-compose.prod.yml pull
+	docker compose -f docker-compose.prod.yml down --remove-orphans
+	docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 
 	docker image prune -f
 }
@@ -206,9 +211,14 @@ deploy_remotely() {
 			echo "WARNING: .env did not exist; copied from .env.example. Update secrets before next deploy."
 		fi
 
-		docker compose -f docker/docker-compose.prod.yml pull
-		docker compose -f docker/docker-compose.prod.yml down --remove-orphans
-		docker compose -f docker/docker-compose.prod.yml up -d --build --force-recreate
+		# The compose file uses DEPLOY_PATH to mount the repo root into /workspace.
+		export DEPLOY_PATH="${deploy_path}"
+
+		# Run compose from the docker/ directory so the project name is stable.
+		cd "${deploy_path}/docker"
+		docker compose -f docker-compose.prod.yml pull
+		docker compose -f docker-compose.prod.yml down --remove-orphans
+		docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 
 		docker image prune -f
 EOF
