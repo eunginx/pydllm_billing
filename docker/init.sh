@@ -7,10 +7,19 @@ MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-123}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 SITE_NAME="${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}"
 
-if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
-    echo "Bench already exists, skipping init"
-    cd /home/frappe/frappe-bench
+BENCH_DIR="/home/frappe/frappe-bench"
+
+# Check if bench is fully initialized (has apps and sites)
+if [ -d "${BENCH_DIR}/apps/frappe" ] && [ -d "${BENCH_DIR}/sites" ]; then
+    echo "Bench fully initialized, starting..."
+    cd "${BENCH_DIR}"
     bench start
+fi
+
+# Clean up any incomplete bench directory from failed runs
+if [ -d "${BENCH_DIR}" ]; then
+    echo "Removing incomplete bench directory..."
+    rm -rf "${BENCH_DIR}"
 fi
 
 echo "Creating new bench..."
