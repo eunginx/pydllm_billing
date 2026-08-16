@@ -3,7 +3,10 @@ version: "3.8"
 services:
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/eunginx/pydllm_billing-backend:latest}
-    command: bash /workspace/docker/init.sh
+    # init.sh is baked into the image at /usr/local/bin/init.sh (see
+    # docker/Dockerfile.backend). There is no /workspace mount in this
+    # GitOps stack, so do NOT reference /workspace/docker/init.sh here.
+    command: bash /usr/local/bin/init.sh
     working_dir: /home/frappe
     environment:
       - SHELL=/bin/bash
