@@ -56,7 +56,10 @@ trap 'log "[EXIT] rc=$?"' EXIT
 # ============================================================
 # MAIN INIT LOGIC
 # ============================================================
-export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
+# The base image sets NODE_VERSION (e.g. 24.13.0), not NODE_VERSION_DEVELOP.
+# Prepend the matching nvm node bin dir to PATH so `node`/`npm` resolve.
+NODE_VERSION="${NODE_VERSION:-24.13.0}"
+export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION}/bin/:${PATH}"
 
 MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-123}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
