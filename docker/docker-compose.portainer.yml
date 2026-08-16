@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/eunginx/pydllm_billing-backend:latest}
+    command: bash /workspace/docker/init.sh
+    working_dir: /home/frappe
+    environment:
+      - SHELL=/bin/bash
+      - FRAPPE_SITE_NAME_HEADER=${FRAPPE_SITE_NAME_HEADER:-ledger.pn.sorsiri.in}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    volumes:
+      - frappe-sites:/home/frappe/frappe-bench/sites
+      - frappe-logs:/home/frappe/frappe-bench/logs
+    networks:
+      - frappe-network
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/method/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  mariadb:
+    image: mariadb:10.8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks:
+      - frappe-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    networks:
+      - frappe-network
+    restart: unless-stopped
+
+  nginx:
+    image: ${NGINX_IMAGE:-ghcr.io/eunginx/pydllm_billing-nginx:latest}
+    ports:
+      - "${NGINX_HOST_PORT:-8484}:80"
+    networks:
+      - frappe-network
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  frappe-sites:
+  frappe-logs:
+  mariadb-data:
+
+networks:
+  frappe-network:
+    driver: bridge

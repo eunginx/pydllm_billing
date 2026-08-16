@@ -28,6 +28,14 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-change-me-to-a-strong-password}"
 # We build frontend assets here to avoid Docker volume mount issues with /opt.
 CHECKOUT_DIR="$(pwd)"
 
+# Clean Docker to prevent layer corruption on TeamCity agent
+cleanup_docker() {
+    echo "=== Cleaning Docker (preventing layer corruption) ==="
+    docker system prune -af --volumes 2>/dev/null || true
+    docker builder prune -af 2>/dev/null || true
+    echo "Docker cleanup complete"
+}
+
 build_frontend() {
 	local build_dir="$1"
 
@@ -133,6 +141,9 @@ verify_deploy_artifacts() {
 
 deploy_locally() {
 	local deploy_path="$1"
+
+	# Clean Docker first to prevent layer corruption on TeamCity agent
+	cleanup_docker
 
 	# ============================================================
 	# TEAMCITY DEPLOYMENT DIAGNOSTICS

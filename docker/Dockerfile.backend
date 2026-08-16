@@ -1,0 +1,24 @@
+# Backend Dockerfile for GitOps/Portainer deployment
+# Builds a custom Frappe bench image with HRMS pre-installed
+# The init.sh runs at container startup to create site if needed
+
+FROM frappe/bench:latest
+
+# Install additional system dependencies if needed
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy init script into image (runs at container startup via compose command)
+COPY docker/init.sh /usr/local/bin/init.sh
+RUN chmod +x /usr/local/bin/init.sh
+
+# Create bench directory structure
+RUN mkdir -p /home/frappe/frappe-bench
+
+WORKDIR /home/frappe
+
+# The actual bench initialization happens at runtime via init.sh
+# This allows the same image to work for fresh installs and existing sites
+CMD ["bash", "/usr/local/bin/init.sh"]
