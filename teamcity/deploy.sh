@@ -109,10 +109,20 @@ verify_deploy_artifacts() {
 		local full_path="${deploy_path}/${f}"
 		if [ ! -e "${full_path}" ]; then
 			echo "ERROR: Required artifact missing after sync: ${full_path}"
+			echo "Contents of ${deploy_path}/docker/:"
+			ls -lah "${deploy_path}/docker/" || true
 			exit 1
 		fi
 		echo "OK: ${f}"
 	done
+
+	# Sanity check the init script is executable and has a valid shebang.
+	local init_path="${deploy_path}/docker/init.sh"
+	if [ ! -x "${init_path}" ]; then
+		echo "WARNING: ${init_path} is not executable; chmod +x applied."
+		chmod +x "${init_path}" || true
+	fi
+	file "${init_path}" || true
 }
 
 deploy_locally() {
@@ -146,6 +156,8 @@ deploy_locally() {
 
 	# Run compose from the docker/ directory so the project name is stable.
 	cd "${deploy_path}/docker"
+	echo "=== Running docker compose from $(pwd) with DEPLOY_PATH=${DEPLOY_PATH} ==="
+
 	docker compose -f docker-compose.prod.yml pull
 	docker compose -f docker-compose.prod.yml down --remove-orphans
 	docker compose -f docker-compose.prod.yml up -d --build --force-recreate
