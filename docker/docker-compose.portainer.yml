@@ -35,10 +35,7 @@ services:
         bench set-config -g redis_queue "redis://redis:6379";
         bench set-config -g redis_socketio "redis://redis:6379";
         if [ ! -d "sites/${FRAPPE_SITE_NAME_HEADER}" ]; then
-          bench new-site --no-mariadb-socket
-            --mariadb-root-password "${MYSQL_ROOT_PASSWORD}"
-            --admin-password "${ADMIN_PASSWORD}"
-            "${FRAPPE_SITE_NAME_HEADER}";
+          bench new-site --no-mariadb-socket --mariadb-root-password "${MYSQL_ROOT_PASSWORD}" --admin-password "${ADMIN_PASSWORD}" "${FRAPPE_SITE_NAME_HEADER}";
           bench --site "${FRAPPE_SITE_NAME_HEADER}" install-app erpnext;
           bench --site "${FRAPPE_SITE_NAME_HEADER}" install-app hrms;
         fi
